@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hey, sup? — SFX Lab</title>
+<style>
+  body { background:#0b0b12; color:#fff; font-family:system-ui,sans-serif; margin:0; padding:20px;
+    max-width:640px; margin-inline:auto; }
+  h1 { color:#ffd23f; font-size:24px; }
+  p.hint { color:#bdbde0; font-size:14px; }
+  .sfx { background:#151522; border:2px solid #2c2c4a; border-radius:14px; padding:14px; margin:12px 0; }
+  .sfx h2 { margin:0 0 4px; font-size:17px; color:#ff5fa2; text-transform:capitalize; }
+  .sfx .desc { font-size:12px; color:#8a8aa8; margin-bottom:10px; }
+  .row { display:flex; gap:10px; }
+  button { flex:1; padding:14px 8px; font-size:16px; font-weight:800; border-radius:12px; cursor:pointer;
+    border:2px solid #ffd23f; background:#23233a; color:#fff; }
+  button:active { transform:scale(.96); background:#2e2e4a; }
+  button small { display:block; font-size:11px; font-weight:400; color:#bdbde0; margin-top:4px; }
+  .cur { outline:2px dashed #5fd97a; outline-offset:-6px; }
+  .picked { outline:3px solid #ffd23f !important; outline-offset:-6px; }
+  .opt { flex:1; display:flex; gap:4px; }
+  .opt button:first-child { flex:1; }
+  .copy { flex:0 0 auto !important; padding:14px 10px !important; font-size:15px !important; }
+</style>
+</head>
+<body>
+<h1>🔊 SFX Lab</h1>
+<p class="hint">Tap each variant to hear it. Variant <b>A</b> (green outline) is what's in the game now.
+Tapping a letter <b>plays</b> it and marks it as your pick (yellow outline) for that sound.
+Every <b>variant</b> below has exactly one job &mdash; the use is printed under each letter. <b>A</b> (green) is what's in the game now; <b>B</b> and <b>C</b> are reserved for their listed jobs, including features still to come.
+Tap <b>📋</b> to copy one pick, or use <b>📋 Copy all picks</b> at the bottom, then paste them to me like <b>"portal B, whoosh C"</b>.</p>
+<div id="lab"></div>
+<button id="copyAll" style="width:100%;margin:18px 0 40px;">📋 Copy all picks</button>
+<script>
+let AC = null, noiseBuf = null;
+function ac() {
+  if (!AC) {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    noiseBuf = AC.createBuffer(1, AC.sampleRate * 1, AC.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function tone(f, dur, type, vol, slideTo, delay) {
+  const c = ac(), t = c.currentTime + (delay || 0);
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'square'; o.frequency.setValueAtTime(f, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
+  g.gain.setValueAtTime(vol || 0.12, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur, vol, fFrom, fTo, delay) {
+  const c = ac(), t = c.currentTime + (delay || 0);
+  const src = c.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const fl = c.createBiquadFilter(); fl.type = 'lowpass';
+  fl.frequency.setValueAtTime(fFrom || 1200, t);
+  if (fTo) fl.frequency.exponentialRampToValueAtTime(fTo, t + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol || 0.12, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(fl); fl.connect(g); g.connect(c.destination);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+const SFX = {
+  click: { desc: 'UI taps, buttons', v: {
+    A: () => tone(660, 0.07, 'square', 0.1),
+    B: () => tone(880, 0.05, 'sine', 0.12),
+    C: () => noise(0.05, 0.14, 4000, 1500) } },
+  whoosh: { desc: 'Scene changes, portal gusts', v: {
+    A: () => tone(180, 0.35, 'sawtooth', 0.1, 900),
+    B: () => noise(0.4, 0.14, 400, 5000),
+    C: () => tone(300, 0.25, 'sine', 0.14, 1200) } },
+  dive: { desc: 'Hero dives into the portal', v: {
+    A: () => tone(900, 0.4, 'sawtooth', 0.12, 150),
+    B: () => { tone(700, 0.5, 'sine', 0.14, 100); tone(350, 0.5, 'sine', 0.08, 90, 0.05); },
+    C: () => tone(500, 0.35, 'square', 0.1, 80) } },
+  pop: { desc: 'TamaGotcha feeding', v: {
+    A: () => tone(520, 0.12, 'sine', 0.12, 940),
+    B: () => tone(400, 0.08, 'square', 0.12, 800),
+    C: () => { tone(520, 0.08, 'sine', 0.12); tone(780, 0.1, 'sine', 0.12, null, 0.07); } } },
+  portal: { desc: 'The portal tears open', v: {
+    A: () => { tone(70, 1.2, 'sawtooth', 0.14, 320); tone(140, 1.2, 'triangle', 0.1, 640); },
+    B: () => { [220, 233, 247].forEach((f, i) => tone(f, 1.1, 'triangle', 0.08, f * 2.2, i * 0.06)); },
+    C: () => { tone(55, 1.0, 'sawtooth', 0.14, 90); [880, 1100, 1320, 1760].forEach((f, i) => tone(f, 0.15, 'sine', 0.07, null, 0.5 + i * 0.1)); } } },
+  lever: { desc: 'Pulling the knife-switch', v: {
+    A: () => { tone(130, 0.09, 'square', 0.16, 55); tone(300, 0.3, 'sine', 0.08, 900, 0.08); },
+    B: () => { tone(200, 0.07, 'square', 0.16, 60); tone(150, 0.4, 'triangle', 0.1, 150, 0.07); },
+    C: () => { noise(0.08, 0.18, 2500, 300); tone(500, 0.25, 'sine', 0.08, 1000, 0.07); } } },
+  shimmer: { desc: 'Magical sparkle moments', v: {
+    A: () => [660, 880, 1320].forEach((f, i) => tone(f, 0.25, 'sine', 0.09, null, i * 0.09)),
+    B: () => [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.2, 'sine', 0.08, null, i * 0.07)),
+    C: () => tone(600, 0.5, 'triangle', 0.1, 1800) } },
+  win: { desc: 'Minigame victory', v: {
+    A: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.16, 'square', 0.1, null, i * 0.11)),
+    B: () => [392, 523, 659, 784].forEach((f, i) => tone(f, 0.22, 'triangle', 0.12, null, i * 0.13)),
+    C: () => { [523, 659, 784].forEach(f => tone(f, 0.3, 'square', 0.07)); [659, 784, 1046].forEach(f => tone(f, 0.4, 'square', 0.07, null, 0.18)); } } },
+  lose: { desc: 'Minigame defeat', v: {
+    A: () => tone(300, 0.5, 'sawtooth', 0.1, 90),
+    B: () => tone(220, 0.7, 'sine', 0.14, 55),
+    C: () => [392, 370, 311].forEach((f, i) => tone(f, 0.25, 'triangle', 0.1, f * 0.94, i * 0.16)) } },
+  step: { desc: 'Footsteps while moving', v: {
+    A: () => tone(82, 0.09, 'sine', 0.11, 55),
+    B: () => noise(0.06, 0.1, 900, 300),
+    C: () => tone(120, 0.07, 'triangle', 0.1, 70) } },
+  open: { desc: 'Phone + apps opening', v: {
+    A: () => { tone(440, 0.09, 'square', 0.1); tone(660, 0.1, 'square', 0.1, null, 0.08); },
+    B: () => tone(520, 0.08, 'sine', 0.12, 880),
+    C: () => { noise(0.12, 0.1, 800, 4000); tone(880, 0.08, 'sine', 0.1, null, 0.06); } } },
+  close: { desc: 'Phone + apps closing', v: {
+    A: () => { tone(660, 0.09, 'square', 0.1); tone(440, 0.1, 'square', 0.1, null, 0.08); },
+    B: () => tone(700, 0.08, 'sine', 0.12, 350),
+    C: () => { tone(880, 0.06, 'sine', 0.1, 440); noise(0.1, 0.08, 3000, 800, 0.05); } } },
+  tick: { desc: 'D-pad presses', v: {
+    A: () => tone(880, 0.05, 'square', 0.06),
+    B: () => tone(1200, 0.04, 'sine', 0.1),
+    C: () => noise(0.04, 0.1, 5000, 2000) } },
+  flag: { desc: 'WEEDSWEEPER flag plants', v: {
+    A: () => tone(420, 0.07, 'square', 0.1),
+    B: () => { tone(420, 0.06, 'square', 0.1); tone(560, 0.08, 'square', 0.1, null, 0.06); },
+    C: () => { noise(0.05, 0.12, 2000, 800); tone(500, 0.07, 'triangle', 0.1, null, 0.04); } } },
+  textIn: { desc: 'Incoming texts (chat + BAM)', v: {
+    A: () => { tone(760, 0.07, 'sine', 0.11); tone(1010, 0.1, 'sine', 0.09, null, 0.07); },
+    B: () => tone(880, 0.09, 'sine', 0.12, 1180),
+    C: () => [660, 880, 1100].forEach((f, i) => tone(f, 0.07, 'sine', 0.1, null, i * 0.06)) } },
+  textOut: { desc: 'Outgoing texts', v: {
+    A: () => tone(540, 0.1, 'sine', 0.09, 920),
+    B: () => tone(600, 0.07, 'square', 0.08, 900),
+    C: () => noise(0.12, 0.08, 1500, 4500) } },
+  dig: { desc: 'WEEDSWEEPER cell reveals', v: {
+    A: () => { noise(0.09, 0.13, 900, 250); tone(140, 0.1, 'sine', 0.12, 70); },
+    B: () => tone(300, 0.08, 'square', 0.1, 150),
+    C: () => { noise(0.14, 0.1, 600, 1800); tone(200, 0.08, 'triangle', 0.08, 120, 0.05); } } },
+  boing: { desc: 'TamaGotcha playing', v: {
+    A: () => { tone(280, 0.22, 'sine', 0.12, 640); tone(640, 0.16, 'sine', 0.08, 300, 0.1); },
+    B: () => { tone(400, 0.12, 'triangle', 0.12, 800); tone(800, 0.1, 'triangle', 0.1, 400, 0.1); },
+    C: () => [523, 659, 784].forEach((f, i) => tone(f, 0.09, 'sine', 0.1, null, i * 0.07)) } },
+  coin: { desc: 'Pickups + currency (planned)', v: {
+    A: () => { tone(988, 0.08, 'square', 0.09); tone(1319, 0.28, 'square', 0.09, null, 0.08); },
+    B: () => [880, 1175, 1568].forEach((f, i) => tone(f, 0.1, 'sine', 0.1, null, i * 0.06)),
+    C: () => { tone(1568, 0.2, 'triangle', 0.1); tone(2093, 0.25, 'sine', 0.07, null, 0.05); } } },
+  horn: { desc: 'Mullet Kart 64 race start (planned)', v: {
+    A: () => { tone(233, 0.5, 'square', 0.1); tone(175, 0.5, 'square', 0.1); },
+    B: () => [196, 247, 294].forEach(f => tone(f, 0.4, 'sawtooth', 0.06)),
+    C: () => { tone(440, 0.15, 'square', 0.12); tone(440, 0.15, 'square', 0.12, null, 0.2); tone(880, 0.4, 'square', 0.12, null, 0.4); } } },
+  thud: { desc: 'Mall Brawl hits (planned)', v: {
+    A: () => { tone(95, 0.16, 'sine', 0.16, 40); noise(0.1, 0.12, 500, 120); },
+    B: () => tone(70, 0.2, 'square', 0.12, 35),
+    C: () => { noise(0.16, 0.14, 350, 90); tone(120, 0.12, 'triangle', 0.1, 50, 0.02); } } },
+  ring: { desc: 'Incoming calls (planned)', v: {
+    A: () => { tone(440, 0.35, 'sine', 0.1); tone(480, 0.35, 'sine', 0.1); tone(440, 0.35, 'sine', 0.1, null, 0.55); tone(480, 0.35, 'sine', 0.1, null, 0.55); },
+    B: () => { tone(880, 0.3, 'triangle', 0.1); tone(880, 0.3, 'triangle', 0.1, null, 0.5); },
+    C: () => [660, 660, 880].forEach((f, i) => tone(f, 0.12, 'square', 0.08, null, i * 0.16)) } },
+};
+const lab = document.getElementById('lab');
+for (const [name, sfx] of Object.entries(SFX)) {
+  const div = document.createElement('div');
+  div.className = 'sfx';
+  // every variant has exactly one assigned use — A is in the game now, B/C are reserved for their listed jobs
+  const uses = {
+    click:   { A: 'UI taps (in game)', B: 'Toggle switches', C: 'BAM keyboard taps' },
+    whoosh:  { A: 'Door transitions (in game)', B: 'Menu screen swipes', C: 'Mall Brawl dash' },
+    dive:    { A: 'Portal dive (in game)', B: 'SkiFlea cliff jump', C: 'Arcade pit fall' },
+    pop:     { A: 'TamaGotcha feeding (in game)', B: 'Recess bubble pop', C: 'Party balloon pop' },
+    portal:  { A: 'Portal tears open (in game)', B: 'Portal closes', C: 'EMO US entrance' },
+    lever:   { A: 'Knife-switch (in game)', B: 'Arcade coin slot', C: 'Door latch' },
+    shimmer: { A: 'BROKENSPORT arrival (in game)', B: 'Photo mode flash', C: 'Unlock sparkle' },
+    win:     { A: 'Minigame victory (in game)', B: 'Kart 1st place', C: 'High-score fanfare' },
+    lose:    { A: 'Minigame defeat (in game)', B: 'Kart last place', C: 'Game-over sting' },
+    step:    { A: 'Footsteps (in game)', B: 'Mall tile steps', C: 'Sneaking steps' },
+    open:    { A: 'Phone opens (in game)', B: 'Interior door opens', C: 'Shop opens' },
+    close:   { A: 'Phone closes (in game)', B: 'Interior door closes', C: 'Window shutter' },
+    tick:    { A: 'D-pad (in game)', B: 'Menu cursor', C: 'Slot machine tick' },
+    flag:    { A: 'WEEDSWEEPER flags (in game)', B: 'Kart checkpoint', C: 'Bookmark claim' },
+    textIn:  { A: 'Incoming text (in game)', B: 'BAM group message', C: 'Voicemail beep' },
+    textOut: { A: 'Outgoing text (in game)', B: 'Delivered receipt', C: 'Photo sent' },
+    dig:     { A: 'Cell reveal (in game)', B: 'Recess sandbox dig', C: 'Crate smash' },
+    boing:   { A: 'Pet play (in game)', B: 'Trampoline', C: 'Pogo bounce' },
+    coin:    { A: 'Pickups (planned)', B: 'Jackpot cascade', C: 'Cash register' },
+    horn:    { A: 'Race start (planned)', B: 'Traffic horn', C: 'Party horn' },
+    thud:    { A: 'Brawl hits (planned)', B: 'Body slam', C: 'Door slam' },
+    ring:    { A: 'Incoming call (planned)', B: 'Doorbell', C: 'Alarm clock' } };
+  let btns = '';
+  for (const [v] of Object.entries(sfx.v))
+    btns += `<div class="opt"><button data-sfx="${name}" data-v="${v}" class="${v === 'A' ? 'cur' : ''}">${v}<small>${uses[name][v]}</small></button><button class="copy" data-copy="${name} ${v}" title="Copy this pick">\uD83D\uDCCB</button></div>`;
+  div.innerHTML = `<h2>${name}</h2><div class="desc">${sfx.desc}</div><div class="row">${btns}</div>`;
+  lab.appendChild(div);
+}
+lab.addEventListener('click', e => {
+  const c = e.target.closest('.copy');
+  if (c) {
+    const done = () => { c.textContent = '\u2713'; setTimeout(() => c.textContent = '\uD83D\uDCCB', 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(c.dataset.copy).then(done).catch(done);
+    else done();
+    return;
+  }
+  const b = e.target.closest('button[data-sfx]');
+  if (!b) return;
+  SFX[b.dataset.sfx].v[b.dataset.v]();
+  const card = b.closest('.sfx');
+  card.querySelectorAll('button[data-sfx]').forEach(x => x.classList.remove('picked'));
+  b.classList.add('picked');
+  picks[b.dataset.sfx] = b.dataset.v;
+});
+const picks = {};
+document.getElementById('copyAll').addEventListener('click', function() {
+  const codes = Object.keys(SFX).map(n => n + ' ' + (picks[n] || 'A')).join(', ');
+  const done = () => { this.textContent = '\u2713 Copied: ' + codes; setTimeout(() => this.textContent = '\uD83D\uDCCB Copy all picks', 2500); };
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(codes).then(done).catch(done);
+  else done();
+});
+</script>
+</body>
+</html>
